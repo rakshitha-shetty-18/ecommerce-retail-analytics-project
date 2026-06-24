@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="retail_analytics.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="3"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="2402"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><table title="online_retail_final" custom_title="0" dock_id="2" table="4,19:mainonline_retail_final"/><dock_state state="000000ff00000000fd00000001000000020000000000000000fc0100000002fb000000160064006f0063006b00420072006f00770073006500310100000000ffffffff0000000000000000fb000000160064006f0063006b00420072006f00770073006500320100000000ffffffff0000011800ffffff000000000000000000000004000000040000000800000008fc00000000"/><default_encoding codec=""/><browse_table_settings/></tab_browse><tab_sql><sql name="SQL 1">-- Query 1: Monthly Revenue Trend
+SELECT 
+    Year,
+    Month,
+    MonthName,
+    ROUND(SUM(TotalRevenue), 2) as MonthlyRevenue,
+    COUNT(DISTINCT InvoiceNo) as TotalOrders
+FROM online_retail_final
+GROUP BY Year, Month, MonthName
+ORDER BY Year, Month;
+
+
+-- Query 2: Top 10 Products by Revenue
+SELECT 
+    Description,
+    ROUND(SUM(TotalRevenue), 2) as TotalRevenue,
+    SUM(Quantity) as TotalQuantity,
+    COUNT(DISTINCT InvoiceNo) as TotalOrders
+FROM online_retail_final
+GROUP BY Description
+ORDER BY TotalRevenue DESC
+LIMIT 10;
+
+
+-- Query 3: Revenue by Country
+SELECT 
+    Country,
+    ROUND(SUM(TotalRevenue), 2) as TotalRevenue,
+    COUNT(DISTINCT CustomerID) as TotalCustomers,
+    COUNT(DISTINCT InvoiceNo) as TotalOrders,
+    ROUND(SUM(TotalRevenue) / COUNT(DISTINCT InvoiceNo), 2) as AvgOrderValue
+FROM online_retail_final
+GROUP BY Country
+ORDER BY TotalRevenue DESC
+LIMIT 10;
+
+
+-- Query 4: Customer Purchase Frequency Segmentation
+SELECT 
+    CASE 
+        WHEN OrderCount = 1 THEN '1 - One time buyer'
+        WHEN OrderCount BETWEEN 2 AND 5 THEN '2-5 - Occasional buyer'
+        WHEN OrderCount BETWEEN 6 AND 10 THEN '6-10 - Regular buyer'
+        WHEN OrderCount &gt; 10 THEN '10+ - Loyal buyer'
+    END as CustomerSegment,
+    COUNT(CustomerID) as TotalCustomers,
+    ROUND(AVG(TotalSpend), 2) as AvgSpend
+FROM (
+    SELECT 
+        CustomerID,
+        COUNT(DISTINCT InvoiceNo) as OrderCount,
+        ROUND(SUM(TotalRevenue), 2) as TotalSpend
+    FROM online_retail_final
+    GROUP BY CustomerID
+) as CustomerSummary
+GROUP BY CustomerSegment
+ORDER BY TotalCustomers DESC;
+
+
+-- Query 5: Overall Business KPIs
+SELECT
+    COUNT(DISTINCT InvoiceNo) as TotalOrders,
+    COUNT(DISTINCT CustomerID) as TotalCustomers,
+    COUNT(DISTINCT StockCode) as TotalProducts,
+    ROUND(SUM(TotalRevenue), 2) as TotalRevenue,
+    ROUND(AVG(TotalRevenue), 2) as AvgOrderValue,
+    ROUND(SUM(TotalRevenue) / COUNT(DISTINCT CustomerID), 2) as RevenuePerCustomer
+FROM online_retail_final;
+
+
+-- Query 6: Peak Sales by Day and Hour
+SELECT 
+    DayOfWeek,
+    CASE DayOfWeek
+        WHEN 0 THEN 'Monday'
+        WHEN 1 THEN 'Tuesday'
+        WHEN 2 THEN 'Wednesday'
+        WHEN 3 THEN 'Thursday'
+        WHEN 4 THEN 'Friday'
+        WHEN 5 THEN 'Saturday'
+        WHEN 6 THEN 'Sunday'
+    END as DayName,
+    Hour,
+    COUNT(DISTINCT InvoiceNo) as TotalOrders,
+    ROUND(SUM(TotalRevenue), 2) as TotalRevenue
+FROM online_retail_final
+GROUP BY DayOfWeek, DayName, Hour
+ORDER BY DayOfWeek, Hour;
+
+
+-- Query 7: Product Revenue Ranking using Window Functions
+SELECT 
+    Description,
+    ROUND(SUM(TotalRevenue), 2) as TotalRevenue,
+    SUM(Quantity) as TotalQuantity,
+    RANK() OVER (ORDER BY SUM(TotalRevenue) DESC) as RevenueRank,
+    DENSE_RANK() OVER (ORDER BY SUM(TotalRevenue) DESC) as DenseRank,
+    ROW_NUMBER() OVER (ORDER BY SUM(TotalRevenue) DESC) as RowNum
+FROM online_retail_final
+GROUP BY Description
+LIMIT 15;
+
+-- Query 8: Month over Month Revenue Growth using LAG
+SELECT 
+    Year,
+    MonthName,
+    ROUND(SUM(TotalRevenue), 2) as MonthlyRevenue,
+    ROUND(LAG(SUM(TotalRevenue)) OVER (ORDER BY Year, Month), 2) as LastMonthRevenue,
+    ROUND(SUM(TotalRevenue) - LAG(SUM(TotalRevenue)) OVER (ORDER BY Year, Month), 2) as RevenueChange,
+    ROUND(
+        (SUM(TotalRevenue) - LAG(SUM(TotalRevenue)) OVER (ORDER BY Year, Month)) 
+        / LAG(SUM(TotalRevenue)) OVER (ORDER BY Year, Month) * 100
+    , 2) as GrowthPercent
+FROM online_retail_final
+GROUP BY Year, Month, MonthName
+ORDER BY Year, Month;
+
+-- Query 9: Customer Lifetime Value using CTE
+WITH CustomerStats AS (
+    SELECT 
+        CustomerID,
+        Country,
+        COUNT(DISTINCT InvoiceNo) as TotalOrders,
+        ROUND(SUM(TotalRevenue), 2) as TotalSpend,
+        MIN(InvoiceDate) as FirstPurchase,
+        MAX(InvoiceDate) as LastPurchase
+    FROM online_retail_final
+    GROUP BY CustomerID, Country
+),
+CustomerSegmented AS (
+    SELECT 
+        CustomerID,
+        Country,
+        TotalOrders,
+        TotalSpend,
+        FirstPurchase,
+        LastPurchase,
+        CASE 
+            WHEN TotalSpend &gt;= 5000 THEN 'Platinum'
+            WHEN TotalSpend BETWEEN 2000 AND 4999 THEN 'Gold'
+            WHEN TotalSpend BETWEEN 1000 AND 1999 THEN 'Silver'
+            ELSE 'Bronze'
+        END as CustomerTier
+    FROM CustomerStats
+)
+SELECT 
+    CustomerTier,
+    COUNT(CustomerID) as TotalCustomers,
+    ROUND(AVG(TotalSpend), 2) as AvgSpend,
+    ROUND(AVG(TotalOrders), 1) as AvgOrders,
+    ROUND(SUM(TotalSpend), 2) as TierRevenue
+FROM CustomerSegmented
+GROUP BY CustomerTier
+ORDER BY AvgSpend DESC;
+
+-- Query 10: Top Product per Country using ROW_NUMBER
+WITH ProductByCountry AS (
+    SELECT 
+        Country,
+        Description,
+        ROUND(SUM(TotalRevenue), 2) as TotalRevenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY Country 
+            ORDER BY SUM(TotalRevenue) DESC
+        ) as CountryRank
+    FROM online_retail_final
+    GROUP BY Country, Description
+)
+SELECT 
+    Country,
+    Description as TopProduct,
+    TotalRevenue
+FROM ProductByCountry
+WHERE CountryRank = 1
+ORDER BY TotalRevenue DESC
+LIMIT 10;
+
+</sql><current_tab id="0"/></tab_sql></sqlb_project>
